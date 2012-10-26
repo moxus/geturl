@@ -11,12 +11,19 @@ import json
 import sys
 import os
 import ConfigParser
+from filepicker import Filepicker
+
+fp = None
 
 #######################
 # Constants
 FPURL = "https://www.filepicker.io"
 FPAPIURL = "https://developers.filepicker.io"
 CONFIG_FILE = os.path.expanduser('~/.geturl')
+if sys.platform == 'win32':
+	USE_CURL = False
+else:
+	USE_CURL = True
 
 #######################
 # Loading Config
@@ -28,10 +35,12 @@ if config.has_option('filepicker', 'apikey'):
 
 #######################
 # Make sure we have curl
-try:
-    check_output('curl --help > /dev/null', shell=True)
-except CalledProcessError:
-    exit("`curl` is required. Please install it")
+if USE_CURL:
+	try:
+	    check_output('curl --help > /dev/null', shell=True)
+	except CalledProcessError:
+	    #exit("`curl` is required. Please install it")
+	    USE_CURL = False
 
 #######################
 # Find or register for an Filepicker.io account
@@ -41,7 +50,11 @@ if not APIKEY:
         email = raw_input('Enter your email to link or create your filepicker.io acccount: ')
 
     # pretty sure this isn't public. found it by looking at the jotform integration
-    APIKEY = check_output(['curl', '--silent', "%(fpurl)s/getKey?email=%(email)s" % {'fpurl': FPAPIURL, 'email': email}])
+    if USE_CURL:
+        APIKEY = check_output(['curl', '--silent', "%(fpurl)s/getKey?email=%(email)s" % {'fpurl': FPAPIURL, 'email': email}])
+    else:
+        fp = Filepicker(email=email)
+        APIKEY = fp.apikey
 
     if not config.has_section('filepicker'):
         config.add_section('filepicker')
@@ -59,12 +72,16 @@ if len(sys.argv) != 2:
 print
 print "Uploading the file to Filepicker.io..."
 filename = sys.argv[1]
-fileurl = urllib.pathname2url(filename)
-output = check_output('curl --progress-bar -F "fileUpload=@%(filename)s" -F "apikey=%(apikey)s" %(fpurl)s/api/path/storage/%(fileurl)s' %
-        {"filename": filename, "apikey": APIKEY, "fpurl": FPURL, "fileurl": fileurl}, shell=True)
-data = json.loads(output)
-url = data['data'][0]['url']
-
+if USE_CURL:
+	fileurl = urllib.pathname2url(filename)
+	output = check_output('curl --progress-bar -F "fileUpload=@%(filename)s" -F "apikey=%(apikey)s" %(fpurl)s/api/path/storage/%(fileurl)s' %
+	        {"filename": filename, "apikey": APIKEY, "fpurl": FPURL, "fileurl": fileurl}, shell=True)
+	data = json.loads(output)
+	url = data['data'][0]['url']
+else:
+	if not fp:
+		fp = Filepicker(email=None, apikey=APIKEY)
+	url = fp.upload_file(filename)
 print
 print "A Public Share URL for: %s" % filename
 print url
@@ -88,4 +105,4 @@ try:
                 pass
 except Exception:
     pass
-        
+
